@@ -50,5 +50,7 @@ flutter {
 dependencies {
     // Core library desugaring — lets flutter_local_notifications use modern Java
     // time APIs on Android devices running below API 26.
-    coreLibraryDesugaring("com.android.tools.desugar_jdk_libs:2.1.4")
+    // v1.2.3 is used instead of 2.x because 2.x uses an AAR metadata "variant"
+    // field that Flutter 3.32.0's bundled AGP version cannot parse.
+    coreLibraryDesugaring("com.android.tools.desugar_jdk_libs:1.2.3")
 }
