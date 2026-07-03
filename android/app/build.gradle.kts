@@ -8,11 +8,17 @@ plugins {
 android {
     namespace = "com.kawaiiquest.kawaii_quest"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+
+    // Pin to the NDK version required by flutter_local_notifications,
+    // path_provider_android, shared_preferences_android, and url_launcher_android.
+    // NDK versions are backward-compatible, so using the highest required version is safe.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // Required by flutter_local_notifications (uses Java 8+ APIs via desugaring)
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -20,11 +26,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.kawaiiquest.kawaii_quest"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Desugaring requires minSdk 21+
+        minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -32,8 +36,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Signing with the debug keys for now.
+            // To publish to the Play Store, replace this with your own signing config.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -41,4 +45,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Core library desugaring — lets flutter_local_notifications use modern Java
+    // time APIs on Android devices running below API 26.
+    coreLibraryDesugaring("com.android.tools.desugar_jdk_libs:2.1.4")
 }
