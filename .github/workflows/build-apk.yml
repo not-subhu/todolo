@@ -1,0 +1,99 @@
+name: Build APK
+
+# ── Triggers ─────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'          # e.g. v1.0.0  → also creates a GitHub Release
+  workflow_dispatch:  # "Run workflow" button in the Actions tab
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+jobs:
+  build-apk:
+    name: Build & release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Source code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Java (required by the Android SDK / Gradle)
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3. Flutter — use stable channel, pinned to the SDK version used locally
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: stable
+          cache: true          # caches the Flutter SDK between runs
+
+      # 4. Dependencies
+      - name: flutter pub get
+        run: flutter pub get
+
+      # 5. Static analysis (non-blocking — warns in the log but never fails the build)
+      - name: flutter analyze
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: true
+
+      # 6. Build split APKs (one per CPU architecture — smaller download for users)
+      - name: Build split APKs
+        run: flutter build apk --release --split-per-abi
+
+      # 7. Build universal APK (single file, works on every device, just bigger)
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      # ── Always: upload APKs as workflow artifacts ──────────────────────────
+      # Available in the Actions tab → your run → "Artifacts" section.
+      # Lets you download the APK after ANY push, even without a tag/release.
+      - name: Upload APKs to Actions artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kawaii-quest-apks
+          retention-days: 30
+          path: |
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+
+      # ── Tag pushes only: create a public GitHub Release ───────────────────
+      # Push a tag like `v1.0.0` to trigger this section.
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: ncipollo/release-action@v1
+        with:
+          name: KawaiiQuest ${{ github.ref_name }} ✨
+          artifacts: |
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+          body: |
+            ## KawaiiQuest ${{ github.ref_name }} ✨
+            Gamified anime productivity app for students~ (◕‿◕✿)
+
+            ### Which APK should I download?
+            | File | Architecture | Use it when… |
+            |------|-------------|--------------|
+            | `app-arm64-v8a-release.apk` | ARM 64-bit | **Most phones made after 2017 — start here** |
+            | `app-armeabi-v7a-release.apk` | ARM 32-bit | Older / budget Android phones |
+            | `app-x86_64-release.apk` | x86 64-bit | Android emulators |
+            | `app-release.apk` | Universal | Works everywhere (largest file) |
+
+            ### How to install
+            1. Download the APK above (arm64-v8a for most people)
+            2. On your phone: **Settings → Security → Install unknown apps** → allow your browser/Files app
+            3. Tap the downloaded APK and follow the prompts
+          draft: false
+          prerelease: false
