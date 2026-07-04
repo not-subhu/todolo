@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/database_service.dart';
 import '../services/gemini_service.dart';
+import '../services/notification_service.dart';
 import '../services/todoist_service.dart';
 
 class TasksProvider extends ChangeNotifier {
-  final DatabaseService _db = DatabaseService();
+  final _db = DatabaseService();
   List<Task> _tasks = [];
   bool _isLoading = true;
 
@@ -22,22 +23,22 @@ class TasksProvider extends ChangeNotifier {
 
   List<Task> get upcomingTasks => _tasks
       .where((t) =>
-          !t.isToday &&
-          !t.isOverdue &&
-          t.status == TaskStatus.pending &&
-          t.dueDate != null)
+          !t.isToday && !t.isOverdue &&
+          t.status == TaskStatus.pending && t.dueDate != null)
       .toList();
 
-  List<Task> get pendingTasks => _tasks
-      .where((t) =>
-          t.status == TaskStatus.pending && t.dueDate == null && !t.isHabit)
-      .toList();
+  List<Task> get pendingTasks =>
+      _tasks.where((t) => t.status == TaskStatus.pending && !t.isHabit).toList();
 
   List<Task> get completedTasks =>
       _tasks.where((t) => t.status == TaskStatus.completed).toList();
 
   int get pendingCount =>
       _tasks.where((t) => t.status == TaskStatus.pending).length;
+
+  /// Called when both AI models are unavailable and pester generation was queued.
+  Function()? _onPesterQueued;
+  void setOnPesterQueued(Function() cb) => _onPesterQueued = cb;
 
   Future<void> load() async {
     _tasks = await _db.getTasks();
@@ -49,12 +50,23 @@ class TasksProvider extends ChangeNotifier {
     await _db.saveTask(task);
     _tasks.add(task);
     notifyListeners();
+    // Fire-and-forget pester generation; queue retry if both models unavailable.
+    _triggerPesterGeneration(task);
   }
 
-  Future<void> addTasks(List<Task> tasks) async {
-    for (final t in tasks) {
+  void _triggerPesterGeneration(Task task) {
+    NotificationService()
+        .generatePesterBatchForTask(task)
+        .then((success) {
+      if (!success) _onPesterQueued?.call();
+    }).catchError((_) {});
+  }
+
+  Future<void> addTasks(List<Task> newTasks) async {
+    for (final t in newTasks) {
       await _db.saveTask(t);
       _tasks.add(t);
+      _triggerPesterGeneration(t);
     }
     notifyListeners();
   }
@@ -75,6 +87,8 @@ class TasksProvider extends ChangeNotifier {
     );
     _tasks[idx] = task;
     await _db.saveTask(task);
+    // Clear pester messages for this task — it's done.
+    await _db.deletePesterMessages(id);
     notifyListeners();
     return task.coinReward;
   }
@@ -82,9 +96,7 @@ class TasksProvider extends ChangeNotifier {
   Future<void> uncompleteTask(String id) async {
     final idx = _tasks.indexWhere((t) => t.id == id);
     if (idx < 0) return;
-    final task = _tasks[idx].copyWith(
-      status: TaskStatus.pending,
-    );
+    final task = _tasks[idx].copyWith(status: TaskStatus.pending);
     _tasks[idx] = task;
     await _db.saveTask(task);
     notifyListeners();
@@ -92,6 +104,7 @@ class TasksProvider extends ChangeNotifier {
 
   Future<void> deleteTask(String id) async {
     await _db.deleteTask(id);
+    await _db.deletePesterMessages(id);
     _tasks.removeWhere((t) => t.id == id);
     notifyListeners();
   }

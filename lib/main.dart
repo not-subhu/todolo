@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'providers/app_provider.dart';
-import 'providers/tasks_provider.dart';
 import 'providers/habits_provider.dart';
 import 'providers/rewards_provider.dart';
+import 'providers/tasks_provider.dart';
+import 'screens/add_task_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/tasks_screen.dart';
-import 'screens/habits_screen.dart';
 import 'screens/rewards_screen.dart';
-import 'screens/settings_screen.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
@@ -17,8 +16,6 @@ import 'widgets/kawaii_widgets.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Bootstrap shared-prefs BEFORE any provider calls load() so _prefs is
-  // never null when providers read persisted data.
   await DatabaseService().initialize();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -26,33 +23,64 @@ void main() async {
       statusBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const KawaiiQuestApp());
+  runApp(const ScreechApp());
 }
 
-class KawaiiQuestApp extends StatelessWidget {
-  const KawaiiQuestApp({super.key});
+class ScreechApp extends StatelessWidget {
+  const ScreechApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // AppProvider.initialize() re-uses the already-open SharedPreferences
-        // instance so it completes synchronously fast.
         ChangeNotifierProvider(create: (_) => AppProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => TasksProvider()..load()),
         ChangeNotifierProvider(create: (_) => HabitsProvider()..load()),
         ChangeNotifierProvider(create: (_) => RewardsProvider()..load()),
       ],
-      child: MaterialApp(
-        title: 'KawaiiQuest',
-        theme: AppTheme.darkTheme,
-        debugShowCheckedModeBanner: false,
-        home: const AppShell(),
+      child: Consumer<AppProvider>(
+        builder: (ctx, app, _) {
+          if (app.isLoading) {
+            return const MaterialApp(
+              debugShowCheckedModeBanner: false,
+              home: _SplashScreen(),
+            );
+          }
+          return MaterialApp(
+            title: 'Screech',
+            theme: app.isDarkMode ? AppTheme.darkTheme : AppTheme.lightTheme,
+            debugShowCheckedModeBanner: false,
+            home: const AppShell(),
+          );
+        },
       ),
     );
   }
 }
 
+// ── Splash ────────────────────────────────────────────────────────────────
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: ScreechColors.bg,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.pets_rounded, color: ScreechColors.primaryLit, size: 56),
+            SizedBox(height: 16),
+            CircularProgressIndicator(color: ScreechColors.primary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── App shell ─────────────────────────────────────────────────────────────
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -61,139 +89,199 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  int _currentIndex = 0;
+  int _tab = 0;
   bool _showPester = false;
-  String _pesterMessage = '';
+  String _pesterMsg = '';
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    TasksScreen(),
-    HabitsScreen(),
-    RewardsScreen(),
-    SettingsScreen(),
-  ];
+  static const _screens = [HomeScreen(), RewardsScreen()];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _setupNotifications());
-  }
-
-  void _setupNotifications() {
-    final app = context.read<AppProvider>();
-    final tasks = context.read<TasksProvider>();
-    NotificationService().configure(
-      username: app.profile.username,
-      geminiKey: app.profile.geminiApiKey,
-      onPester: (msg) {
-        if (app.profile.pesteringEnabled && mounted) {
-          _showPesterOverlay(msg);
-        }
-      },
-    );
-    // Actually start the periodic pester timer if the user has it enabled.
-    if (app.profile.pesteringEnabled) {
-      NotificationService().startPestering(
-        pendingTasks: tasks.tasks,
-        intervalMinutes: app.profile.pesterIntervalMinutes,
-      );
-    }
-  }
-
-  void _showPesterOverlay(String message) {
-    setState(() {
-      _pesterMessage = message;
-      _showPester = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return; // widget may have been disposed before first frame
+      _setup();
+      // Re-configure NotificationService whenever the profile changes
+      // (Gemini key, pester toggle, interval, custom prompt, etc.)
+      context.read<AppProvider>().addListener(_onProfileChanged);
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<AppProvider>(
-      builder: (context, app, _) {
-        if (app.isLoading) {
-          return const Scaffold(
-            backgroundColor: KawaiiColors.deepPurple,
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('✨', style: TextStyle(fontSize: 64)),
-                  SizedBox(height: 20),
-                  CircularProgressIndicator(color: KawaiiColors.sakuraPink),
-                  SizedBox(height: 16),
-                  Text('Loading KawaiiQuest~',
-                      style: TextStyle(color: KawaiiColors.textSecondary)),
-                ],
-              ),
-            ),
-          );
-        }
+  void dispose() {
+    // Remove listener before teardown, then stop any live pester timers
+    // so they don't fire into a dead widget tree.
+    context.read<AppProvider>().removeListener(_onProfileChanged);
+    NotificationService().stopAll();
+    super.dispose();
+  }
 
-        return Stack(
-          children: [
-            Scaffold(
-              body: Container(
-                decoration: BoxDecoration(
-                  gradient: AppTheme.bgGradient,
-                ),
-                child: IndexedStack(
-                  index: _currentIndex,
-                  children: _screens,
-                ),
-              ),
-              bottomNavigationBar: _buildBottomNav(),
-            ),
-            if (_showPester)
-              PesterOverlay(
-                message: _pesterMessage,
-                onDismiss: () => setState(() => _showPester = false),
-                onGoToTask: () {
-                  setState(() {
-                    _showPester = false;
-                    _currentIndex = 1;
-                  });
-                },
-              ),
-          ],
-        );
+  void _onProfileChanged() => _configureNotifications();
+
+  void _setup() {
+    _configureNotifications();
+
+    // Retry success: tell the user their queued task pester messages arrived
+    NotificationService().setRetrySuccessCallback((taskTitle) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'Pester messages ready for "$taskTitle" ~',
+            style: GoogleFonts.inter(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: ScreechColors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 3),
+        ));
+      }
+    });
+
+    // When a task is added but both AI models are unavailable, tell the user
+    context.read<TasksProvider>().setOnPesterQueued(() {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'Your tasks will be added soon _winks_',
+            style: GoogleFonts.inter(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: ScreechColors.accent,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+    });
+  }
+
+  /// Configures NotificationService from the current profile.
+  /// Safe to call repeatedly — replaces the previous configuration.
+  void _configureNotifications() {
+    if (!mounted) return;
+    final app = context.read<AppProvider>();
+    NotificationService().configure(
+      username: app.profile.username,
+      geminiKey: app.profile.geminiApiKey,
+      customPrompt: app.profile.customPesterPrompt,
+      pesteringEnabled: app.profile.pesteringEnabled,
+      intervalMinutes: app.profile.pesterIntervalMinutes,
+      onPester: (msg) {
+        if (app.profile.pesteringEnabled && mounted) {
+          setState(() {
+            _pesterMsg = msg;
+            _showPester = true;
+          });
+        }
       },
     );
   }
 
-  Widget _buildBottomNav() {
-    const items = [
-      BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
-      BottomNavigationBarItem(icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
-      BottomNavigationBarItem(icon: Icon(Icons.loop_rounded), label: 'Habits'),
-      BottomNavigationBarItem(icon: Icon(Icons.card_giftcard_rounded), label: 'Rewards'),
-      BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: KawaiiColors.midPurple,
-        border: Border(
-          top: BorderSide(color: KawaiiColors.lavender.withAlpha(40), width: 1),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(60),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: ScreechColors.bg,
+          body: IndexedStack(
+            index: _tab,
+            children: _screens,
           ),
-        ],
+          bottomNavigationBar: _buildBottomBar(),
+          floatingActionButton: _buildFAB(context),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerDocked,
+        ),
+        if (_showPester)
+          PesterOverlay(
+            message: _pesterMsg,
+            onDismiss: () => setState(() => _showPester = false),
+            onGoToTask: () => setState(() {
+              _showPester = false;
+              _tab = 0;
+            }),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFAB(BuildContext context) {
+    return FloatingActionButton(
+      backgroundColor: ScreechColors.primary,
+      elevation: 6,
+      onPressed: () {
+        final app = context.read<AppProvider>();
+        final tasksP = context.read<TasksProvider>();
+        Navigator.of(context).push(PageRouteBuilder(
+          pageBuilder: (_, __, ___) => AddTaskScreen(
+            geminiKey: app.profile.geminiApiKey ?? '',
+            onTasksAdded: (newTasks) async {
+              await tasksP.addTasks(newTasks);
+            },
+          ),
+          transitionsBuilder: (_, anim, __, child) => SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 280),
+        ));
+      },
+      child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return BottomAppBar(
+      color: ScreechColors.bgCard,
+      elevation: 0,
+      notchMargin: 8,
+      shape: const CircularNotchedRectangle(),
+      child: SizedBox(
+        height: 56,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _tabItem(0, Icons.view_list_rounded, Icons.view_list_outlined, 'Home'),
+            const SizedBox(width: 60), // FAB gap
+            _tabItem(1, Icons.card_giftcard_rounded, Icons.card_giftcard_outlined, 'Rewards'),
+          ],
+        ),
       ),
-      child: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        items: items,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        selectedItemColor: KawaiiColors.sakuraPink,
-        unselectedItemColor: KawaiiColors.textMuted,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+    );
+  }
+
+  Widget _tabItem(int index, IconData activeIcon, IconData inactiveIcon, String label) {
+    final selected = _tab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _tab = index),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected ? activeIcon : inactiveIcon,
+              color: selected ? ScreechColors.primary : ScreechColors.textMuted,
+              size: 24,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: selected ? ScreechColors.primary : ScreechColors.textMuted,
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

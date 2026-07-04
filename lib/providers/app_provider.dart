@@ -3,24 +3,22 @@ import '../models/user_profile.dart';
 import '../services/database_service.dart';
 
 class AppProvider extends ChangeNotifier {
-  final DatabaseService _db = DatabaseService();
+  final _db = DatabaseService();
   UserProfile _profile = UserProfile();
   bool _isLoading = true;
-  int _currentTab = 0;
 
   UserProfile get profile => _profile;
   bool get isLoading => _isLoading;
-  int get currentTab => _currentTab;
+
+  // Derived personalisation helpers
+  Color get primaryColor => _profile.primaryColor;
+  double get glassLevel  => _profile.glassLevel;
+  bool get isDarkMode    => _profile.isDarkMode;
 
   Future<void> initialize() async {
     await _db.initialize();
     _profile = await _db.getProfile();
     _isLoading = false;
-    notifyListeners();
-  }
-
-  void setTab(int tab) {
-    _currentTab = tab;
     notifyListeners();
   }
 
@@ -58,7 +56,6 @@ class AppProvider extends ChangeNotifier {
     final last = _profile.lastActiveDate != null
         ? _dateOnly(_profile.lastActiveDate!)
         : null;
-
     if (last == null) {
       _profile.currentStreak = 1;
     } else if (today.difference(last).inDays == 1) {
@@ -66,7 +63,6 @@ class AppProvider extends ChangeNotifier {
     } else if (today.difference(last).inDays > 1) {
       _profile.currentStreak = 1;
     }
-
     if (_profile.currentStreak > _profile.longestStreak) {
       _profile.longestStreak = _profile.currentStreak;
     }
@@ -77,6 +73,42 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> updateProfile(UserProfile updated) async {
     _profile = updated;
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setPrimaryColor(Color color) async {
+    _profile.primaryColorValue = color.toARGB32();
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setGlassLevel(double level) async {
+    _profile.glassLevel = level;
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setDarkMode(bool dark) async {
+    _profile.isDarkMode = dark;
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setHeaderImage(String? path) async {
+    _profile.headerImagePath = path;
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setMotivationQuote(String? quote) async {
+    _profile.motivationQuote = quote;
+    await _db.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> setCustomPesterPrompt(String? prompt) async {
+    _profile.customPesterPrompt = prompt;
     await _db.saveProfile(_profile);
     notifyListeners();
   }

@@ -10,18 +10,17 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
-  static const String _tasksKey = 'kq_tasks';
-  static const String _habitsKey = 'kq_habits';
-  static const String _rewardsKey = 'kq_rewards';
-  static const String _profileKey = 'kq_profile';
+  static const String _tasksKey   = 'sc_tasks';
+  static const String _habitsKey  = 'sc_habits';
+  static const String _rewardsKey = 'sc_rewards';
+  static const String _profileKey = 'sc_profile';
+  static const String _pesterPfx  = 'sc_pester_';   // + taskId
+  static const String _pendingAiKey = 'sc_pending_ai';
 
   SharedPreferences? _prefs;
 
   Future<void> initialize() async {
-    // Idempotent — safe to call multiple times (e.g., from main() and from
-    // AppProvider.initialize()). Only opens SharedPreferences once.
     _prefs ??= await SharedPreferences.getInstance();
-    // Initialize with default rewards if empty
     final rewards = await getRewards();
     if (rewards.isEmpty) {
       for (final r in Reward.defaultRewards) {
@@ -30,107 +29,109 @@ class DatabaseService {
     }
   }
 
-  // ── Tasks ──────────────────────────────────────────────
+  // ── Tasks ────────────────────────────────────────────────────────────────
   Future<List<Task>> getTasks() async {
     final raw = _prefs?.getString(_tasksKey);
     if (raw == null) return [];
     final list = jsonDecode(raw) as List<dynamic>;
-    return list
-        .map((e) => Task.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    return list.map((e) => Task.fromJson(Map<String, dynamic>.from(e))).toList();
   }
 
   Future<void> saveTask(Task task) async {
     final tasks = await getTasks();
     final idx = tasks.indexWhere((t) => t.id == task.id);
-    if (idx >= 0) {
-      tasks[idx] = task;
-    } else {
-      tasks.add(task);
-    }
-    await _prefs?.setString(
-        _tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
+    if (idx >= 0) { tasks[idx] = task; } else { tasks.add(task); }
+    await _prefs?.setString(_tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
   }
 
   Future<void> deleteTask(String id) async {
     final tasks = await getTasks();
     tasks.removeWhere((t) => t.id == id);
-    await _prefs?.setString(
-        _tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
+    await _prefs?.setString(_tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
   }
 
   Future<void> saveTasks(List<Task> tasks) async {
-    await _prefs?.setString(
-        _tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
+    await _prefs?.setString(_tasksKey, jsonEncode(tasks.map((t) => t.toJson()).toList()));
   }
 
-  // ── Habits ──────────────────────────────────────────────
+  // ── Habits ───────────────────────────────────────────────────────────────
   Future<List<Habit>> getHabits() async {
     final raw = _prefs?.getString(_habitsKey);
     if (raw == null) return [];
     final list = jsonDecode(raw) as List<dynamic>;
-    return list
-        .map((e) => Habit.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    return list.map((e) => Habit.fromJson(Map<String, dynamic>.from(e))).toList();
   }
 
   Future<void> saveHabit(Habit habit) async {
     final habits = await getHabits();
     final idx = habits.indexWhere((h) => h.id == habit.id);
-    if (idx >= 0) {
-      habits[idx] = habit;
-    } else {
-      habits.add(habit);
-    }
-    await _prefs?.setString(
-        _habitsKey, jsonEncode(habits.map((h) => h.toJson()).toList()));
+    if (idx >= 0) { habits[idx] = habit; } else { habits.add(habit); }
+    await _prefs?.setString(_habitsKey, jsonEncode(habits.map((h) => h.toJson()).toList()));
   }
 
   Future<void> deleteHabit(String id) async {
     final habits = await getHabits();
     habits.removeWhere((h) => h.id == id);
-    await _prefs?.setString(
-        _habitsKey, jsonEncode(habits.map((h) => h.toJson()).toList()));
+    await _prefs?.setString(_habitsKey, jsonEncode(habits.map((h) => h.toJson()).toList()));
   }
 
-  // ── Rewards ──────────────────────────────────────────────
+  // ── Rewards ──────────────────────────────────────────────────────────────
   Future<List<Reward>> getRewards() async {
     final raw = _prefs?.getString(_rewardsKey);
     if (raw == null) return [];
     final list = jsonDecode(raw) as List<dynamic>;
-    return list
-        .map((e) => Reward.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    return list.map((e) => Reward.fromJson(Map<String, dynamic>.from(e))).toList();
   }
 
   Future<void> saveReward(Reward reward) async {
     final rewards = await getRewards();
     final idx = rewards.indexWhere((r) => r.id == reward.id);
-    if (idx >= 0) {
-      rewards[idx] = reward;
-    } else {
-      rewards.add(reward);
-    }
-    await _prefs?.setString(
-        _rewardsKey, jsonEncode(rewards.map((r) => r.toJson()).toList()));
+    if (idx >= 0) { rewards[idx] = reward; } else { rewards.add(reward); }
+    await _prefs?.setString(_rewardsKey, jsonEncode(rewards.map((r) => r.toJson()).toList()));
   }
 
   Future<void> deleteReward(String id) async {
     final rewards = await getRewards();
     rewards.removeWhere((r) => r.id == id);
-    await _prefs?.setString(
-        _rewardsKey, jsonEncode(rewards.map((r) => r.toJson()).toList()));
+    await _prefs?.setString(_rewardsKey, jsonEncode(rewards.map((r) => r.toJson()).toList()));
   }
 
-  // ── User Profile ──────────────────────────────────────────────
+  // ── User Profile ─────────────────────────────────────────────────────────
   Future<UserProfile> getProfile() async {
     final raw = _prefs?.getString(_profileKey);
     if (raw == null) return UserProfile();
-    return UserProfile.fromJson(
-        Map<String, dynamic>.from(jsonDecode(raw)));
+    return UserProfile.fromJson(Map<String, dynamic>.from(jsonDecode(raw)));
   }
 
   Future<void> saveProfile(UserProfile profile) async {
     await _prefs?.setString(_profileKey, jsonEncode(profile.toJson()));
+  }
+
+  // ── Pester message cache (per task) ──────────────────────────────────────
+  Future<List<String>> getPesterMessages(String taskId) async {
+    final raw = _prefs?.getString('$_pesterPfx$taskId');
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List<dynamic>).cast<String>();
+  }
+
+  Future<void> savePesterMessages(String taskId, List<String> messages) async {
+    await _prefs?.setString('$_pesterPfx$taskId', jsonEncode(messages));
+  }
+
+  Future<void> deletePesterMessages(String taskId) async {
+    await _prefs?.remove('$_pesterPfx$taskId');
+  }
+
+  // ── Pending AI retry queue ────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getPendingAi() async {
+    final raw = _prefs?.getString(_pendingAiKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<void> savePendingAi(List<Map<String, dynamic>> pending) async {
+    await _prefs?.setString(_pendingAiKey, jsonEncode(pending));
   }
 }
